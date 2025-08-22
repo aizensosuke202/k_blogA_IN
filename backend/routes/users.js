@@ -4,6 +4,19 @@ const bcrypt = require('bcrypt');
 const saltRounds = 10;
 const pool = require('../db');
 const authenticateToken = require('../middleware/authMiddleware');
+const { body, validationResult} = rquire('express-validator');
+
+router.post('/', [
+    body('username').isLength({min: 3}),
+    body('email').isEmail(),
+    body('password').isLength({min: 6})
+], asyn(req, res => {
+    const errors = validationResult(req);
+    if(!errors.isEmpty()){
+         return res.status(400).json({error: errors.array() })
+    }
+})
+)
 
 // CREATE user
 router.post('/', async (req, res) => {
