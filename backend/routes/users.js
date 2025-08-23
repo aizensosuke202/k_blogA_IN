@@ -10,13 +10,12 @@ router.post('/', [
     body('username').isLength({min: 3}),
     body('email').isEmail(),
     body('password').isLength({min: 6})
-], asyn(req, res => {
+], async(req, res)=> {
     const errors = validationResult(req);
     if(!errors.isEmpty()){
          return res.status(400).json({error: errors.array() })
     }
-})
-)
+});
 
 // CREATE user
 router.post('/', async (req, res) => {
@@ -84,19 +83,69 @@ router.put('/:id', async (req, res) => {
         res.status(500).send('Erreur serveur');
     }
 });
-router.put('/:id', async (req,res)=>{
-    try{
+/**
+ * Modifie le mot de passe d'un utilisateur (nécessite l'ancien mot de passe)
+ * PUT /api/users/:id/password
+ */
+router.put('/:id/password', async (req, res) => {
+    try {
         const { id } = req.params;
-        const { passwd } = req.body;
-        const result = await pool.query('Update users set passwd = $1', [passwd]);
-          if(result.rows.lenght === 0){
-        return res.status(404).json({message: 'le mot de passe non existant'});
-        } 
-        res.json(result.rows[0]);
+        const { oldPassword, newPassword } = req.body;
+
+        // Validation des données
+        if (!oldPassword || !newPassword) {
+            return res.status(400).json({ 
+                error: 'L\'ancien et le nouveau mot de passe sont requis' 
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ 
+                error: 'Le nouveau mot de passe doit contenir au moins 6 caractères' 
+            });
+        }
+
+        // Récupérer l'utilisateur
+        const userResult = await pool.query(
+            'SELECT userid, passwd FROM users WHERE userid = $1',
+            [id]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ message: 'Utilisateur non trouvé' });
+        }
+
+        const user = userResult.rows[0];
+
+        // Vérifier l'ancien mot de passe
+        const isPasswordValid = await bcrypt.compare(oldPassword, user.passwd);
+        
+        if (!isPasswordValid) {
+            return res.status(401).json({ error: 'Ancien mot de passe incorrect' });
+        }
+
+        // Hacher le nouveau mot de passe
+        const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+
+        // Mettre à jour
+        const updateResult = await pool.query(
+            `UPDATE users 
+             SET passwd = $1, updatedat = NOW() 
+             WHERE userid = $2 
+             RETURNING userid, username, email, createdat`,
+            [hashedNewPassword, id]
+        );
+
+        res.json({ 
+            success: true,
+            message: 'Mot de passe modifié avec succès',
+            user: updateResult.rows[0]
+        });
+
+    } catch (err) {
+        console.error('Erreur modification mot de passe:', err.message);
+        res.status(500).json({ error: 'Erreur serveur' });
     }
-    catch (err) {
-        console.error(err.message);
-        res.status(500).send('Erreur serveur');
 });
 
 // DELETE user
